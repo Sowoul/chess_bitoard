@@ -1,1 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Game</title>
+</head>
+<body>
+    <div id="game"></div>
+    <input name="from_square" id="from_square" placeholder="from"/>
+    <input name="to_square" id="to_square" placeholder="to"/>
+    <button onclick="move(event)">Move</button>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.1/socket.io.min.js"></script>
+    <script>
+        var socket = io.connect('/')
+        var from = document.getElementById('from_square')
+        var to = document.getElementById('to_square')
+        var board = document.getElementById('game')
+        function move(event){
+            event.preventDefault();
+            socket.emit('move',[from.value, to.value])
+        }
+        socket.on('connect', function(){
+            console.log('connected')
+        })
+        socket.on('renderboard', function(data){
+            console.log(data)
+            game.innerHTML = data;
+        })
+    </script>
+</body>
+</html>
 
