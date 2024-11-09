@@ -1,0 +1,1 @@
+An attempt to minimize the number of computations, and bytes sent over the socket connection during a board update state, which, ive managed to bring down to 96 bytes, from over 4000 in my last attempt, where I used objects
