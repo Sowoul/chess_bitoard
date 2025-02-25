@@ -8,9 +8,9 @@
 uint64_t totalCount = 0;
 uint64_t saved = 0;
 uint64_t collisions = 0;
-int MOVES = 0;
+int MOVES = 1;
 
-#define TABLE_SIZE (1 << 27)
+#define TABLE_SIZE (1 << 24)
 
 typedef struct Board {
     uint64_t BLACK_ROOKS, BLACK_KNIGHTS, BLACK_BISHOPS, BLACK_QUEEN, BLACK_PAWNS, BLACK_KING;
@@ -39,6 +39,15 @@ void init_table() {
     }
 }
 
+void free_table(){
+    for (int i = 0; i < TABLE_SIZE; i++) {
+        if (TRANSPOSITIONS[i]!=NULL){
+            free(TRANSPOSITIONS[i]);
+            TRANSPOSITIONS[i] = NULL;
+        }
+    }
+}
+
 int random_table[12][64];
 
 void setupRandomTable(){
@@ -53,7 +62,7 @@ void setupRandomTable(){
 uint64_t hash(board BOARD) {
     uint64_t h = BOARD.turn;
     board temp = BOARD;
-
+    h *= MOVES;
     while (temp.BLACK_ROOKS) {
         int pos = __builtin_ctzll(temp.BLACK_ROOKS);
         h ^= random_table[0][pos];
@@ -526,9 +535,9 @@ struct MoveList* generate_moves(board *BOARD) {
 }
 
 
-#define PAWN_VALUE 100
-#define KNIGHT_VALUE 320
-#define BISHOP_VALUE 330
+#define PAWN_VALUE 110
+#define KNIGHT_VALUE 330
+#define BISHOP_VALUE 360
 #define ROOK_VALUE 500
 #define QUEEN_VALUE 900
 #define KING_VALUE 20000
@@ -536,9 +545,9 @@ struct MoveList* generate_moves(board *BOARD) {
 
 const int pawn_table[64] = {
     0,  0,  0,  0,  0,  0,  0,  0,
-    50, 50, 50, 50, 50, 50, 50, 50,
+    50, 50, 50, 10, 10, 50, 50, 50,
     10, 10, 20, 30, 30, 20, 10, 10,
-    5,  5, 10, 25, 25, 10,  5,  5,
+    5,  5, 10, 35, 35, 10,  5,  5,
     0,  0,  0, 20, 20,  0,  0,  0,
     5, -5,-10,  0,  0,-10, -5,  5,
     5, 10, 10,-20,-20, 10, 10,  5,
@@ -548,7 +557,7 @@ const int pawn_table[64] = {
 const int knight_table[64] = {
     -50,-40,-30,-30,-30,-30,-40,-50,
     -40,-20,  0,  0,  0,  0,-20,-40,
-    -30,  0, 10, 15, 15, 10,  0,-30,
+    -30,  0, 20, 15, 15, 20,  0,-30,
     -30,  5, 15, 20, 20, 15,  5,-30,
     -30,  0, 15, 20, 20, 15,  0,-30,
     -30,  5, 10, 15, 15, 10,  5,-30,
@@ -569,7 +578,6 @@ const int bishop_table[64] = {
 
 
 _Float16 evaluatePosition(board *BOARD);
-_Float16 quiescence(_Float16 alpha, _Float16 beta, int depth, board *BOARD);
 
 
 int count_bits(uint64_t bb) {
@@ -627,7 +635,6 @@ _Float16 evaluatePosition(board *BOARD) {
     if (!BOARD->BLACK_KING) return INFINITY;
     else if (!BOARD->WHITE_KING) return -INFINITY;
     _Float16 score = 0;
-
     score += count_bits(BOARD->WHITE_PAWNS) * PAWN_VALUE;
     score += count_bits(BOARD->WHITE_KNIGHTS) * KNIGHT_VALUE;
     score += count_bits(BOARD->WHITE_BISHOPS) * BISHOP_VALUE;
@@ -644,26 +651,26 @@ _Float16 evaluatePosition(board *BOARD) {
 
 
     uint64_t bb;
+    _Float16 bonus = 0;
     int sq;
-    _Float16 factor = MOVES<6?1.5:1;
     bb = BOARD->WHITE_PAWNS;
     while (bb) {
         sq = __builtin_ctzll(bb);
-        score += pawn_table[sq]*factor;
+        bonus += pawn_table[sq];
         bb &= (bb - 1);
     }
 
     bb = BOARD->WHITE_KNIGHTS;
     while (bb) {
         sq = __builtin_ctzll(bb);
-        score += knight_table[sq];
+        bonus += knight_table[sq];
         bb &= (bb - 1);
     }
 
     bb = BOARD->WHITE_BISHOPS;
     while (bb) {
         sq = __builtin_ctzll(bb);
-        score += bishop_table[sq];
+        bonus += bishop_table[sq];
         bb &= (bb - 1);
     }
 
@@ -671,54 +678,29 @@ _Float16 evaluatePosition(board *BOARD) {
     bb = BOARD->BLACK_PAWNS;
     while (bb) {
         sq = __builtin_ctzll(bb);
-        score -= pawn_table[63 - sq]*factor;
+        bonus -= pawn_table[63 - sq];
         bb &= (bb - 1);
     }
 
     bb = BOARD->BLACK_KNIGHTS;
     while (bb) {
         sq = __builtin_ctzll(bb);
-        score -= knight_table[63 - sq];
+        bonus -= knight_table[63 - sq];
         bb &= (bb - 1);
     }
 
     bb = BOARD->BLACK_BISHOPS;
     while (bb) {
         sq = __builtin_ctzll(bb);
-        score -= bishop_table[63 - sq];
+        bonus -= bishop_table[63 - sq];
         bb &= (bb - 1);
     }
-
-    return (_Float16)score/100;
+    return (score + bonus/10)/100;
 }
 
-
-_Float16 quiescence(_Float16 alpha, _Float16 beta, int depth, board *BOARD) {
-    _Float16 stand_pat = evaluatePosition(BOARD);
-
-    if (depth == 0) return stand_pat;
-    if (stand_pat >= beta) return beta;
-    if (alpha < stand_pat) alpha = stand_pat;
-
-    char captures[218][5];
-    int num_captures;
-    get_captures(BOARD, BOARD->turn, &num_captures, captures);
-
-    for (int i = 0; i < num_captures; i++) {
-        board temp_board = *BOARD;
-        if (move(&temp_board, captures[i], captures[i] + 2)) {
-            _Float16 score = -quiescence(-beta, -alpha, depth - 1, &temp_board);
-            if (score >= beta) return beta;
-            if (score > alpha) alpha = score;
-        }
-    }
-
-    return alpha;
-}
 
 
 _Float16 evaluateBoard(board *BOARD) {
-    // return quiescence(-32000, 32000, 1, BOARD);
     return evaluatePosition(BOARD);
 }
 
@@ -744,44 +726,40 @@ movepair minimax(board *BOARD, int depth, _Float16 alpha, _Float16 beta, bool ma
         return transpose->best_move;
     }
     totalCount++;
-
     movepair bestMove;
     bestMove.eval = maximizingPlayer ? -INFINITY : INFINITY;
 
-
-    movepair moves[256];
     struct MoveList *movelist = generate_moves(BOARD);
-    int moveCount = 0;
-    while (movelist){
-        movepair new_move;
-        new_move.from = movelist->from;
-        new_move.to = movelist->to;
-        new_move.eval = evaluateMove(BOARD, movelist);
-        moves[moveCount++] = new_move;
-        movelist = movelist->next;
-    }
-
-    for (int i = 0; i < moveCount; i++) {
+    struct MoveList *dummy = movelist;
+    while (dummy){
         board newBoard = *BOARD;
-        move(&newBoard, moves[i].from, moves[i].to);
-
+        move(&newBoard, dummy->from, dummy->to);
+        MOVES++;
         movepair evalMove = minimax(&newBoard, depth - 1, alpha, beta, !maximizingPlayer);
-
         if (maximizingPlayer) {
             if (evalMove.eval > bestMove.eval) {
-                bestMove = moves[i];
+                movepair new_move;
+                new_move.from = dummy->from;
+                new_move.to = dummy->to;
+                new_move.eval = evaluateMove(BOARD, dummy);
+                bestMove = new_move;
                 bestMove.eval = evalMove.eval;
             }
             alpha = fmax(alpha, bestMove.eval);
         } else {
             if (evalMove.eval < bestMove.eval) {
-                bestMove = moves[i];
+                movepair new_move;
+                new_move.from = dummy->from;
+                new_move.to = dummy->to;
+                new_move.eval = evaluateMove(BOARD, dummy);
+                bestMove = new_move;
                 bestMove.eval = evalMove.eval;
             }
             beta = fmin(beta, bestMove.eval);
         }
-
+        MOVES--;
         if (beta <= alpha) break;
+        dummy = dummy->next;
     }
     Transposition *new_transposition = malloc(sizeof(Transposition));
     if (!new_transposition) return bestMove;
@@ -800,15 +778,14 @@ movepair searchBestMove(board *BOARD, int depth) {
 void playGame(board *BOARD, int depth,int moves){
         for (int _ = 0; _<moves; _++){
             movepair best_move = searchBestMove(BOARD,depth);
-            printf("%s's turn = ", BOARD->turn?"White":"Black");
+            printf("%d > %s's turn = ",MOVES, BOARD->turn?"White":"Black");
             printf("%s -> %s (%f) || Positions : %llu || Saved : %llu|| Collisions : %llu\n", best_move.from, best_move.to, (double)best_move.eval, totalCount, saved, collisions);
             move(BOARD, best_move.from, best_move.to);
             totalCount = 0;
-            free(best_move.from);
-            free(best_move.to);
             saved =0;
-            collisions = 0;
             MOVES++;
+            collisions = 0;
+            if (!(BOARD->BLACK_KING && BOARD->WHITE_KING))return;
         }
     }
 
@@ -830,6 +807,10 @@ int main(void) {
     setupRandomTable();
     setupBoard(&BOARD);
     updateMasks(&BOARD);
-    playGame(&BOARD,6,8);
+    struct MoveList *moves = malloc(sizeof(struct MoveList));
+    moves = generate_moves(&BOARD);
+    // playGame(&BOARD,5,20);
+    playAlong(&BOARD, 6);
+    // playGame(&BOARD,5,50);
     return 0;
 }
