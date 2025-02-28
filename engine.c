@@ -8,9 +8,55 @@
 uint64_t totalCount = 0;
 uint64_t saved = 0;
 uint64_t collisions = 0;
+
 int MOVES = 1;
 
-#define TABLE_SIZE (1 << 24)
+
+#define TABLE_SIZE (1 << 27)
+#define DEPTH 5
+#define TOTAL_MOVES 20
+
+#define PAWN_VALUE 110
+#define KNIGHT_VALUE 330
+#define BISHOP_VALUE 360
+#define ROOK_VALUE 500
+#define QUEEN_VALUE 900
+#define KING_VALUE 20000
+
+
+const int pawn_table[64] = {
+    0,  0,  0,  0,  0,  0,  0,  0,
+    50, 50, 50, 10, 10, 50, 50, 50,
+    10, 10, 20, 30, 30, 20, 10, 10,
+    5,  5, 10, 35, 35, 10,  5,  5,
+    0,  0,  0, 20, 20,  0,  0,  0,
+    5, -5,-10,  0,  0,-10, -5,  5,
+    5, 10, 10,-20,-20, 10, 10,  5,
+    0,  0,  0,  0,  0,  0,  0,  0
+};
+
+const int knight_table[64] = {
+    -50,-40,-30,-30,-30,-30,-40,-50,
+    -40,-20,  0,  0,  0,  0,-20,-40,
+    -30,  0, 20, 15, 15, 20,  0,-30,
+    -30,  5, 15, 20, 20, 15,  5,-30,
+    -30,  0, 15, 20, 20, 15,  0,-30,
+    -30,  5, 10, 15, 15, 10,  5,-30,
+    -40,-20,  0,  5,  5,  0,-20,-40,
+    -50,-40,-30,-30,-30,-30,-40,-50
+};
+
+const int bishop_table[64] = {
+    -20,-10,-10,-10,-10,-10,-10,-20,
+    -10,  0,  0,  0,  0,  0,  0,-10,
+    -10,  0,  5, 10, 10,  5,  0,-10,
+    -10,  5,  5, 10, 10,  5,  5,-10,
+    -10,  0, 10, 10, 10, 10,  0,-10,
+    -10, 10, 10, 10, 10, 10, 10,-10,
+    -10,  5,  0,  0,  0,  0,  5,-10,
+    -20,-10,-10,-10,-10,-10,-10,-20
+};
+
 
 typedef struct Board {
     uint64_t BLACK_ROOKS, BLACK_KNIGHTS, BLACK_BISHOPS, BLACK_QUEEN, BLACK_PAWNS, BLACK_KING;
@@ -27,7 +73,7 @@ typedef struct MovePair{
 typedef struct transposition {
     board BOARD;
     int depth;
-    movepair best_move;
+    movepair *best_move;
     struct transposition *next;
 } Transposition;
 
@@ -351,6 +397,11 @@ bool move(board *BOARD, const char* from, const char* to) {
             if (valid) {
                 BOARD->WHITE_PAWNS ^= from_mask;
                 BOARD->WHITE_PAWNS |= to_mask;
+                if ((from_mask & BOARD->WHITE_PAWNS) && (to_mask & 0xFF00000000000000ULL)) {
+                    BOARD->WHITE_PAWNS ^= to_mask;
+                    BOARD->WHITE_QUEEN |= to_mask;
+                }
+
             }
         } else if (from_mask & BOARD->WHITE_KNIGHTS) {
             valid = is_valid_knight_move(from_index, to_index);
@@ -397,6 +448,11 @@ bool move(board *BOARD, const char* from, const char* to) {
             if (valid) {
                 BOARD->BLACK_PAWNS ^= from_mask;
                 BOARD->BLACK_PAWNS |= to_mask;
+                if (to_mask & 0x00000000000000FFULL) {
+                    BOARD->BLACK_PAWNS ^= to_mask;
+                    BOARD->BLACK_QUEEN |= to_mask;
+                }
+
             }
         } else if (from_mask & BOARD->BLACK_KNIGHTS) {
             valid = is_valid_knight_move(from_index, to_index);
@@ -535,46 +591,6 @@ struct MoveList* generate_moves(board *BOARD) {
 }
 
 
-#define PAWN_VALUE 110
-#define KNIGHT_VALUE 330
-#define BISHOP_VALUE 360
-#define ROOK_VALUE 500
-#define QUEEN_VALUE 900
-#define KING_VALUE 20000
-
-
-const int pawn_table[64] = {
-    0,  0,  0,  0,  0,  0,  0,  0,
-    50, 50, 50, 10, 10, 50, 50, 50,
-    10, 10, 20, 30, 30, 20, 10, 10,
-    5,  5, 10, 35, 35, 10,  5,  5,
-    0,  0,  0, 20, 20,  0,  0,  0,
-    5, -5,-10,  0,  0,-10, -5,  5,
-    5, 10, 10,-20,-20, 10, 10,  5,
-    0,  0,  0,  0,  0,  0,  0,  0
-};
-
-const int knight_table[64] = {
-    -50,-40,-30,-30,-30,-30,-40,-50,
-    -40,-20,  0,  0,  0,  0,-20,-40,
-    -30,  0, 20, 15, 15, 20,  0,-30,
-    -30,  5, 15, 20, 20, 15,  5,-30,
-    -30,  0, 15, 20, 20, 15,  0,-30,
-    -30,  5, 10, 15, 15, 10,  5,-30,
-    -40,-20,  0,  5,  5,  0,-20,-40,
-    -50,-40,-30,-30,-30,-30,-40,-50
-};
-
-const int bishop_table[64] = {
-    -20,-10,-10,-10,-10,-10,-10,-20,
-    -10,  0,  0,  0,  0,  0,  0,-10,
-    -10,  0,  5, 10, 10,  5,  0,-10,
-    -10,  5,  5, 10, 10,  5,  5,-10,
-    -10,  0, 10, 10, 10, 10,  0,-10,
-    -10, 10, 10, 10, 10, 10, 10,-10,
-    -10,  5,  0,  0,  0,  0,  5,-10,
-    -20,-10,-10,-10,-10,-10,-10,-20
-};
 
 
 _Float16 evaluatePosition(board *BOARD);
@@ -695,7 +711,7 @@ _Float16 evaluatePosition(board *BOARD) {
         bonus -= bishop_table[63 - sq];
         bb &= (bb - 1);
     }
-    return (score + bonus/10)/100;
+    return (score + bonus/20)/100;
 }
 
 
@@ -711,12 +727,12 @@ _Float16 evaluateMove(board *BOARD, struct MoveList *MOVE){
     return evaluateBoard(&new_board);
 }
 
-movepair minimax(board *BOARD, int depth, _Float16 alpha, _Float16 beta, bool maximizingPlayer) {
+movepair* minimax(board *BOARD, int depth, _Float16 alpha, _Float16 beta, bool maximizingPlayer) {
     if (depth <= 0) {
-        movepair leaf;
-        leaf.from = NULL;
-        leaf.to = NULL;
-        leaf.eval = evaluateBoard(BOARD);
+        movepair *leaf = malloc(sizeof(movepair));
+        leaf->from = NULL;
+        leaf->to = NULL;
+        leaf->eval = evaluateBoard(BOARD);
         return leaf;
     }
 
@@ -726,61 +742,56 @@ movepair minimax(board *BOARD, int depth, _Float16 alpha, _Float16 beta, bool ma
         return transpose->best_move;
     }
     totalCount++;
-    movepair bestMove;
-    bestMove.eval = maximizingPlayer ? -INFINITY : INFINITY;
+    movepair *bestMove = malloc(sizeof(movepair));
+    bestMove->eval = maximizingPlayer ? -INFINITY : INFINITY;
 
     struct MoveList *movelist = generate_moves(BOARD);
-    struct MoveList *dummy = movelist;
-    while (dummy){
+    while (movelist){
         board newBoard = *BOARD;
-        move(&newBoard, dummy->from, dummy->to);
+        move(&newBoard, movelist->from, movelist->to);
         MOVES++;
-        movepair evalMove = minimax(&newBoard, depth - 1, alpha, beta, !maximizingPlayer);
+        movepair *evalMove = minimax(&newBoard, depth - 1, alpha, beta, !maximizingPlayer);
         if (maximizingPlayer) {
-            if (evalMove.eval > bestMove.eval) {
-                movepair new_move;
-                new_move.from = dummy->from;
-                new_move.to = dummy->to;
-                new_move.eval = evaluateMove(BOARD, dummy);
-                bestMove = new_move;
-                bestMove.eval = evalMove.eval;
+            if (evalMove->eval > bestMove->eval) {
+                bestMove->from = movelist->from;
+                bestMove->to = movelist->to;
+                bestMove->eval = evalMove->eval;
             }
-            alpha = fmax(alpha, bestMove.eval);
+            alpha = fmax(alpha, bestMove->eval);
         } else {
-            if (evalMove.eval < bestMove.eval) {
-                movepair new_move;
-                new_move.from = dummy->from;
-                new_move.to = dummy->to;
-                new_move.eval = evaluateMove(BOARD, dummy);
-                bestMove = new_move;
-                bestMove.eval = evalMove.eval;
+            if (evalMove->eval < bestMove->eval) {
+                movepair *new_move = malloc(sizeof(movepair));
+                bestMove->from = movelist->from;
+                bestMove->to = movelist->to;
+                bestMove->eval = evalMove->eval;
             }
-            beta = fmin(beta, bestMove.eval);
+            beta = fmin(beta, bestMove->eval);
         }
         MOVES--;
         if (beta <= alpha) break;
-        dummy = dummy->next;
+        movelist = movelist->next;
     }
+
     Transposition *new_transposition = malloc(sizeof(Transposition));
     if (!new_transposition) return bestMove;
     new_transposition->best_move = bestMove;
     new_transposition->BOARD = *BOARD;
     new_transposition->depth = depth;
     addTransposition(new_transposition);
-    free(movelist);
     return bestMove;
 }
 
-movepair searchBestMove(board *BOARD, int depth) {
+movepair* searchBestMove(board *BOARD, int depth) {
     return minimax(BOARD, depth, -INFINITY, INFINITY, BOARD->turn);
 }
 
 void playGame(board *BOARD, int depth,int moves){
         for (int _ = 0; _<moves; _++){
-            movepair best_move = searchBestMove(BOARD,depth);
+            movepair *best_move;
+            best_move = searchBestMove(BOARD,depth);
             printf("%d > %s's turn = ",MOVES, BOARD->turn?"White":"Black");
-            printf("%s -> %s (%f) || Positions : %llu || Saved : %llu|| Collisions : %llu\n", best_move.from, best_move.to, (double)best_move.eval, totalCount, saved, collisions);
-            move(BOARD, best_move.from, best_move.to);
+            printf("%s -> %s (%f) || Positions : %llu || Saved : %llu|| Collisions : %llu\n", best_move->from, best_move->to, (double)best_move->eval, totalCount, saved, collisions);
+            move(BOARD, best_move->from, best_move->to);
             totalCount = 0;
             saved =0;
             MOVES++;
@@ -792,8 +803,8 @@ void playGame(board *BOARD, int depth,int moves){
 void playAlong(board *BOARD, int depth){
     while (true){
         char movestr[4];
+        printf("Your turn :\t");
         scanf("%s", movestr);
-        printf("\n");
         char from[2] = { movestr[0], movestr[1] };
         char to[2] = { movestr[2], movestr[3] };
         move(BOARD, from,to);
@@ -809,8 +820,7 @@ int main(void) {
     updateMasks(&BOARD);
     struct MoveList *moves = malloc(sizeof(struct MoveList));
     moves = generate_moves(&BOARD);
-    // playGame(&BOARD,5,20);
-    playAlong(&BOARD, 6);
-    // playGame(&BOARD,5,50);
+    playGame(&BOARD,DEPTH,TOTAL_MOVES);
+    // playAlong(&BOARD, DEPTH);
     return 0;
 }
